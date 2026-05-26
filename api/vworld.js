@@ -1,83 +1,72 @@
-import https from 'https'; // HTTPS 모듈 사용
+const https = require('https');
 
-export default async function handler(req, res) {
+module.exports = async function(req, res) {
   // 1. CORS 헤더 설정
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
 
-  // Preflight 요청(OPTIONS) 처리
+  // Preflight 요청 통과
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
   try {
-    const queryParams = req.query;
+    const { key, domain } = req.query;
 
-    if (!queryParams.key || !queryParams.domain) {
+    if (!key || !domain) {
       return res.status(400).json({ error: "Missing Parameters", message: "key와 domain이 필요합니다." });
     }
 
-    // 2. VWorld HTTPS 주소 조립
-    const targetUrl = new URL('https://api.vworld.kr/req/data');
-    for (const [key, value] of Object.entries(queryParams)) {
-      if (key !== 'key' && key !== 'domain') {
-        targetUrl.searchParams.append(key, value);
-      }
-    }
-    targetUrl.searchParams.append('key', queryParams.key);
-    targetUrl.searchParams.append('domain', queryParams.domain);
+    // 2. 파라미터 조립 및 인코딩 보정 (★ 매우 중요)
+    const params = new URLSearchParams(req.query);
+    // URLSearchParams는 공백을 '+'로 변환하는데, VWorld는 이를 인식하지 못하므로 '%20'으로 강제 복구합니다.
+    const queryString = params.toString().replace(/\+/g, '%20');
 
-    // 3. 통신 옵션 (핵심 해결책 포함)
+    // 3. 통신 옵션 설정 (IPv4 강제, Referer 헤더 추가)
     const options = {
-      hostname: targetUrl.hostname,
-      path: targetUrl.pathname + targetUrl.search,
+      hostname: 'api.vworld.kr',
+      path: '/req/data?' + queryString,
       method: 'GET',
-      family: 4, // ★ 핵심: VWorld 서버의 IPv6 연결 거부를 막기 위해 강제로 IPv4망 사용
+      family: 4, // IPv4망 강제 사용 (Socket Hang up 방지)
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Host': 'api.vworld.kr' // Host 강제 지정
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': domain // ★ VWorld 인증을 위해 도메인을 Referer로 위장
       }
     };
 
-    // 4. 요청 보내기
-    const vworldData = await new Promise((resolve, reject) => {
-      const request = https.request(options, (response) => {
-        let data = '';
-        response.on('data', (chunk) => { data += chunk; });
-        response.on('end', () => {
-          resolve({
-            status: response.statusCode,
-            headers: response.headers,
-            body: data
-          });
-        });
-      });
-      request.on('error', (error) => reject(error));
-      request.end(); 
+    // 4. 파이프(Pipe) 방식으로 데이터 즉시 릴레이
+    const proxyReq = https.request(options, (proxyRes) => {
+      // VWorld의 응답 헤더(콘텐츠 타입 등)를 그대로 클라이언트에게 복사
+      res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'application/json;charset=UTF-8');
+      res.status(proxyRes.statusCode);
+
+      // 데이터를 Vercel 서버 메모리에 쌓지 않고, 들어오는 즉시 클라이언트로 흘려보냄
+      proxyRes.pipe(res);
     });
 
-    // 5. 결과 반환
-    const contentType = vworldData.headers['content-type'] || '';
-    if (contentType.includes('application/json')) {
-      try {
-        const jsonData = JSON.parse(vworldData.body);
-        return res.status(vworldData.status).json(jsonData);
-      } catch (parseError) {
-        return res.status(500).json({ error: 'JSON Parse Error', data: vworldData.body });
+    // 5. 에러 및 타임아웃 처리 방어막
+    proxyReq.on('error', (e) => {
+      console.error('VWorld Request Error:', e);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Proxy Request Failed', details: e.message });
       }
-    } else {
-      return res.status(vworldData.status).send(vworldData.body);
-    }
-
-  } catch (error) {
-    console.error('Proxy Error:', error);
-    return res.status(502).json({ 
-      error: 'Bad Gateway', 
-      message: 'VWorld 서버 통신 중 오류가 발생했습니다.',
-      detail: error.message
     });
+
+    // Vercel의 10초 타임아웃 전인 8초에 연결을 끊고 에러 반환 (하드 502 크래시 방지)
+    proxyReq.setTimeout(8000, () => {
+      proxyReq.destroy();
+      if (!res.headersSent) {
+        res.status(504).json({ error: 'Gateway Timeout', message: 'VWorld 서버가 응답하지 않습니다.' });
+      }
+    });
+
+    proxyReq.end(); // 요청 실행
+
+  } catch (err) {
+    console.error('Server Catch Error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal Server Error', details: err.message });
+    }
   }
-}
+};
