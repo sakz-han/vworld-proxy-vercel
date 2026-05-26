@@ -18,8 +18,8 @@ export default async function handler(req, res) {
 
     // ★ 중요: VWorld API 키와 도메인을 반드시 넣어주어야 합니다.
     // 클라이언트에서 넘기지 않을 경우를 대비해 환경변수나 하드코딩으로 기본값을 설정하세요.
-    const VWORLD_KEY = process.env.VWORLD_KEY || queryParams.key || '발급받은_VWORLD_API_키_입력';
-    const VWORLD_DOMAIN = process.env.VWORLD_DOMAIN || queryParams.domain || '등록한_도메인_입력(예: localhost)';
+    const VWORLD_KEY = process.env.VWORLD_KEY || queryParams.key || 'F781960D-00D4-30EB-A0EA-D4051FFAE5F4';
+    const VWORLD_DOMAIN = process.env.VWORLD_DOMAIN || queryParams.domain || 'https://sakz-han.github.io';
 
     // 3. VWorld 타겟 URL 객체 생성 (URLSearchParams가 인코딩을 안전하게 자동 처리)
     const targetUrl = new URL('https://api.vworld.kr/req/data');
