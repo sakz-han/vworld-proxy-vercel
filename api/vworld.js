@@ -1,4 +1,4 @@
-import https from 'https'; // ← http에서 https로 변경
+import https from 'https';
 
 export default async function handler(req, res) {
   // 1. CORS 헤더 설정
@@ -22,23 +22,23 @@ export default async function handler(req, res) {
       return resolve();
     }
 
-    // 2. 파라미터 조립 및 인코딩 보정
+    // 2. 파라미터 조립
     const params = new URLSearchParams(req.query);
     const queryString = params.toString().replace(/\+/g, '%20');
 
-    // 3. HTTPS 통신 옵션 설정
+    // 3. HTTPS 통신 옵션
     const options = {
       hostname: 'api.vworld.kr',
       path: '/req/data?' + queryString,
       method: 'GET',
-      family: 4, // IPv4 강제
+      family: 4,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
         'Referer': domain
       }
     };
 
-    // 4. https 모듈로 요청
+    // 4. https 요청
     const proxyReq = https.request(options, (proxyRes) => {
       res.setHeader('Content-Type', 
         proxyRes.headers['content-type'] || 'application/json;charset=UTF-8'
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       });
     });
 
-    // 5. 에러 및 타임아웃 처리
+    // 5. 에러 처리
     proxyReq.on('error', (e) => {
       console.error('VWorld Request Error:', e);
       if (!res.headersSent) {
