@@ -1,13 +1,13 @@
 import https from 'https';
 
 export default async function handler(req, res) {
-  // CORS Headers
+  // CORS 설정
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Handle preflight request
+  // Preflight 요청 처리
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -34,16 +34,16 @@ export default async function handler(req, res) {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
         'Referer': domain,
       },
-      timeout: 8000,
+      timeout: 10000,           // 10초로 증가
     };
 
     return new Promise((resolve) => {
       const proxyReq = https.request(options, (proxyRes) => {
-        // Forward status and headers
         res.status(proxyRes.statusCode || 200);
-        
-        Object.keys(proxyRes.headers).forEach((key) => {
-          res.setHeader(key, proxyRes.headers[key]);
+
+        // 헤더 전체 전달
+        Object.entries(proxyRes.headers).forEach(([key, value]) => {
+          res.setHeader(key, value);
         });
 
         proxyRes.pipe(res);
@@ -62,6 +62,7 @@ export default async function handler(req, res) {
         resolve();
       });
 
+      // Timeout 처리
       proxyReq.on('timeout', () => {
         proxyReq.destroy();
         if (!res.headersSent) {
