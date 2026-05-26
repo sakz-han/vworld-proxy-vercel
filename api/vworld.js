@@ -1,13 +1,13 @@
-import http from 'http';
+import https from 'https'; // HTTPS 모듈 사용
 
 export default async function handler(req, res) {
-  // 1. CORS 헤더 설정 (모바일 및 로컬 접근 허용)
+  // 1. CORS 헤더 설정
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
-  // Preflight 요청 통과
+  // Preflight 요청(OPTIONS) 처리
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -15,13 +15,12 @@ export default async function handler(req, res) {
   try {
     const queryParams = req.query;
 
-    // 파라미터 누락 방어
     if (!queryParams.key || !queryParams.domain) {
       return res.status(400).json({ error: "Missing Parameters", message: "key와 domain이 필요합니다." });
     }
 
-    // 2. 타겟 URL 조립 (VWorld 서버)
-    const targetUrl = new URL('http://api.vworld.kr/req/data');
+    // 2. VWorld HTTPS 주소 조립
+    const targetUrl = new URL('https://api.vworld.kr/req/data');
     for (const [key, value] of Object.entries(queryParams)) {
       if (key !== 'key' && key !== 'domain') {
         targetUrl.searchParams.append(key, value);
@@ -30,22 +29,23 @@ export default async function handler(req, res) {
     targetUrl.searchParams.append('key', queryParams.key);
     targetUrl.searchParams.append('domain', queryParams.domain);
 
-    // 3. fetch 대신 안정적인 http 코어 모듈 사용
+    // 3. 통신 옵션 (핵심 해결책 포함)
     const options = {
       hostname: targetUrl.hostname,
       path: targetUrl.pathname + targetUrl.search,
       method: 'GET',
+      family: 4, // ★ 핵심: VWorld 서버의 IPv6 연결 거부를 막기 위해 강제로 IPv4망 사용
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': '*/*'
+        'Accept': '*/*',
+        'Host': 'api.vworld.kr' // Host 강제 지정
       }
     };
 
-    // 4. VWorld 서버에 직접 스트림 연결
+    // 4. 요청 보내기
     const vworldData = await new Promise((resolve, reject) => {
-      const request = http.request(options, (response) => {
+      const request = https.request(options, (response) => {
         let data = '';
-        // 데이터가 쪼개져서 올 경우 합치기
         response.on('data', (chunk) => { data += chunk; });
         response.on('end', () => {
           resolve({
@@ -56,10 +56,10 @@ export default async function handler(req, res) {
         });
       });
       request.on('error', (error) => reject(error));
-      request.end(); // 요청 전송
+      request.end(); 
     });
 
-    // 5. 응답 결과 클라이언트로 반환
+    // 5. 결과 반환
     const contentType = vworldData.headers['content-type'] || '';
     if (contentType.includes('application/json')) {
       try {
