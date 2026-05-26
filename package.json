@@ -4,5 +4,13 @@
   "type": "module",
   "engines": {
     "node": ">=18.x"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Vercel에서 자동 빌드됩니다.'",
+    "deploy": "vercel deploy"
+  },
+  "dependencies": {
+    // 필요 시 추가 (현재는 https 모듈만 사용하므로 빈 상태로도 가능)
   }
 }
