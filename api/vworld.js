@@ -1,6 +1,5 @@
-// api/vworld.js
 export default async function handler(req, res) {
-  // 1. CORS 헤더 설정 (모바일 브라우저 요청 허용)
+  // 1. CORS 헤더 설정
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -8,22 +7,28 @@ export default async function handler(req, res) {
 
   // Preflight 요청(OPTIONS) 처리
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   try {
-    // 2. 클라이언트에서 넘어온 쿼리 파라미터 추출
     const queryParams = req.query;
 
-    // ★ 중요: VWorld API 키와 도메인을 반드시 넣어주어야 합니다.
-    // 클라이언트에서 넘기지 않을 경우를 대비해 환경변수나 하드코딩으로 기본값을 설정하세요.
-    const VWORLD_KEY = process.env.VWORLD_KEY || queryParams.key || 'F781960D-00D4-30EB-A0EA-D4051FFAE5F4';
-    const VWORLD_DOMAIN = process.env.VWORLD_DOMAIN || queryParams.domain || 'https://sakz-han.github.io';
+    // ★ 2. 클라이언트에서 전달된 키와 도메인 추출
+    const VWORLD_KEY = queryParams.key;
+    const VWORLD_DOMAIN = queryParams.domain;
 
-    // 3. VWorld 타겟 URL 객체 생성 (URLSearchParams가 인코딩을 안전하게 자동 처리)
-    const targetUrl = new URL('https://api.vworld.kr/req/data');
+    // 파라미터가 비어있다면 VWorld에 요청하기 전에 미리 차단
+    if (!VWORLD_KEY || !VWORLD_DOMAIN) {
+      return res.status(400).json({ 
+        error: "Missing Parameters", 
+        message: "URL 파라미터에 key와 domain 값이 포함되어야 합니다." 
+      });
+    }
+
+    // ★ 3. 핵심 해결책: https 대신 http 사용 (TLS 인증서 충돌 방지)
+    const targetUrl = new URL('http://api.vworld.kr/req/data');
     
+    // 넘어온 파라미터들을 VWorld URL에 조립
     for (const [key, value] of Object.entries(queryParams)) {
       if (key !== 'key' && key !== 'domain') {
         targetUrl.searchParams.append(key, value);
@@ -32,25 +37,32 @@ export default async function handler(req, res) {
     targetUrl.searchParams.append('key', VWORLD_KEY);
     targetUrl.searchParams.append('domain', VWORLD_DOMAIN);
 
-    // 4. VWorld로 요청 전송
-    const response = await fetch(targetUrl.toString());
+    // ★ 4. 핵심 해결책: 브라우저인 척 위장하는 User-Agent 헤더 추가
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+      }
+    });
 
-    // 5. VWorld 응답이 JSON인지 텍스트(XML 등 에러)인지 확인 후 안전하게 파싱
-    const contentType = response.headers.get('content-type');
-    let data;
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      return res.status(200).json(data);
     } else {
-      // VWorld에서 에러 발생 시 XML이나 평문으로 올 수 있음
       const textData = await response.text();
       return res.status(response.status).send(textData);
     }
 
-    // 6. 결과 반환
-    res.status(200).json(data);
-
   } catch (error) {
+    // 에러 발생 시 더 상세한 원인(cause)을 출력하도록 수정
     console.error('Proxy Error:', error);
-    res.status(502).json({ error: 'Bad Gateway', message: error.message });
+    return res.status(502).json({ 
+      error: 'Bad Gateway', 
+      message: error.message,
+      cause: error.cause ? error.cause.message : 'Unknown'
+    });
   }
 }
