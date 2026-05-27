@@ -1,15 +1,7 @@
 {
-  "version": 2,
-  "functions": {
-    "api/vworld.js": {
-      "runtime": "nodejs18.x",
-      "memory": 1024,
-      "maxDuration": 10
-    }
-  },
   "headers": [
     {
-      "source": "/api/vworld(.*)",
+      "source": "/api/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Credentials", "value": "true" },
         { "key": "Access-Control-Allow-Origin", "value": "*" },
