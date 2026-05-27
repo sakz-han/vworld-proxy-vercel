@@ -1,5 +1,3 @@
-import https from 'https';
-
 export default async function handler(req, res) {
   // CORS 설정
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -22,67 +20,32 @@ export default async function handler(req, res) {
   }
 
   try {
+    // 1. 요청 파라미터 재조립
     const params = new URLSearchParams(req.query);
     const queryString = params.toString().replace(/\+/g, '%20');
+    const targetUrl = `https://api.vworld.kr/req/data?${queryString}`;
 
-    const options = {
-      hostname: 'api.vworld.kr',
-      path: `/req/data?${queryString}`,
+    // 2. 최신 fetch API를 사용해 VWorld에 요청
+    const response = await fetch(targetUrl, {
       method: 'GET',
-      family: 4,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Referer': domain,
-      },
-      timeout: 10000,           // 10초로 증가
-    };
-
-    return new Promise((resolve) => {
-      const proxyReq = https.request(options, (proxyRes) => {
-        res.status(proxyRes.statusCode || 200);
-
-        // 헤더 전체 전달
-        Object.entries(proxyRes.headers).forEach(([key, value]) => {
-          res.setHeader(key, value);
-        });
-
-        proxyRes.pipe(res);
-
-        proxyRes.on('end', () => resolve());
-      });
-
-      proxyReq.on('error', (e) => {
-        console.error('VWorld Request Error:', e);
-        if (!res.headersSent) {
-          res.status(502).json({
-            error: 'Proxy Request Failed',
-            details: e.message,
-          });
-        }
-        resolve();
-      });
-
-      // Timeout 처리
-      proxyReq.on('timeout', () => {
-        proxyReq.destroy();
-        if (!res.headersSent) {
-          res.status(504).json({
-            error: 'Gateway Timeout',
-            message: 'VWorld 서버가 응답하지 않습니다.',
-          });
-        }
-        resolve();
-      });
-
-      proxyReq.end();
+        'Referer': domain
+      }
     });
+
+    // 3. 응답 데이터를 텍스트(JSON 문자열)로 추출
+    const data = await response.text();
+
+    // 4. 안전하게 Content-Type만 지정하여 클라이언트에 반환 (502 에러 방지)
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.status(response.status).send(data);
+
   } catch (error) {
-    console.error('Handler Error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Internal Server Error',
-        message: error.message,
-      });
-    }
+    console.error('Fetch Error:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message
+    });
   }
 }
