@@ -4,10 +4,5 @@
   "type": "module",
   "engines": {
     "node": ">=18.x"
-  },
-  "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'No build required'",
-    "deploy": "vercel deploy --prod"
   }
 }
